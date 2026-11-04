@@ -20,3 +20,19 @@ docker compose exec -T plausible_events_db clickhouse-client \
 
 find backups -mindepth 1 -maxdepth 1 -type d -mtime +7 -exec rm -rf {} +
 echo "backup ok: $dir $(du -sh "$dir" | cut -f1)"
+
+# 异地副本：.env 配了 R2 凭据时上传到 R2，过期由 bucket 生命周期规则负责。
+# 只按键名读取需要的变量，不 source 整个 .env；凭据不传进 Plausible 容器。
+envvar() { grep -E "^$1=" .env | tail -1 | cut -d= -f2- || true; }
+r2_key=$(envvar R2_ACCESS_KEY_ID)
+if [ -n "$r2_key" ]; then
+  RCLONE_CONFIG_R2_ACCESS_KEY_ID=$r2_key \
+  RCLONE_CONFIG_R2_SECRET_ACCESS_KEY=$(envvar R2_SECRET_ACCESS_KEY) \
+  RCLONE_CONFIG_R2_ENDPOINT="https://$(envvar R2_ACCOUNT_ID).r2.cloudflarestorage.com" \
+  docker run --rm -v "$PWD/backups:/backups:ro" \
+    -e RCLONE_CONFIG_R2_TYPE=s3 -e RCLONE_CONFIG_R2_PROVIDER=Cloudflare \
+    -e RCLONE_CONFIG_R2_ACCESS_KEY_ID -e RCLONE_CONFIG_R2_SECRET_ACCESS_KEY -e RCLONE_CONFIG_R2_ENDPOINT \
+    -e RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true \
+    rclone/rclone:1.68.2 copy "/backups/$ts" "r2:$(envvar R2_BUCKET)/$ts" --quiet
+  echo "offsite ok: r2:$(envvar R2_BUCKET)/$ts"
+fi

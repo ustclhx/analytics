@@ -42,7 +42,7 @@
 
 ## 备份与恢复
 
-`backup.sh` 每天 03:30（服务器时区）把 Postgres（`pg_dump -Fc`）和 ClickHouse（`BACKUP DATABASE`）写到 `deploy/backups/<UTC 时间>/`，保留 7 天。系统盘另有阿里云自动快照策略 `plausible-daily` 作为整机兜底：每天 04:00（UTC+8）拍一次，保留 7 天，不跨地域复制，「自动快照随云盘释放」应保持关闭。升级前可以手动拍一张快照，确认升级没问题后删掉。异地备份（R2）尚未配置。
+`backup.sh` 每天 03:30（服务器时区）把 Postgres（`pg_dump -Fc`）和 ClickHouse（`BACKUP DATABASE`）写到 `deploy/backups/<UTC 时间>/`，保留 7 天。系统盘另有阿里云自动快照策略 `plausible-daily` 作为整机兜底：每天 04:00（UTC+8）拍一次，保留 7 天，不跨地域复制，「自动快照随云盘释放」应保持关闭。升级前可以手动拍一张快照，确认升级没问题后删掉。`.env` 里配了 `R2_*` 时，`backup.sh` 跑完本地备份后会用 `rclone/rclone` 容器把当天的备份目录上传到 R2 bucket `plausible-backups`（APAC，私有），bucket 的生命周期规则 30 天后自动删除。上传失败时脚本以非零状态退出，日志写在 `/var/log/plausible-backup.log`。从 R2 取回备份：用同一组环境变量运行 `rclone copy r2:plausible-backups/<ts> /backups/<ts>`，再按下面的步骤恢复。
 
 ### 恢复演练（不影响线上，无需快照）
 

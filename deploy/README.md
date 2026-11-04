@@ -14,7 +14,7 @@
 
 ## 首次部署
 
-1. 服务器：装 Docker（官方 apt 源），`ufw` 只放行 22/80/443，root 只允许密钥登录。阿里云安全组同样只放行这三个端口。
+1. 服务器：装 Docker（官方 apt 源），`ufw` 只放行 22/80/443，root 只允许密钥登录。阿里云安全组同样只放行这三个端口；交换机若绑定了网络 ACL，入方向也要放行 80/443。外部 80 不通时 Let's Encrypt 会报 `Timeout during connect`，可在服务器上 `tcpdump -ni eth0 tcp dst port 80` 确认包是否到达。
 2. DNS：在 Cloudflare 为子域名加 A 记录，指向服务器公网 IP，Proxy status 选 DNS only。
 3. 检出并生成配置：
 

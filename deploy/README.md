@@ -44,15 +44,40 @@
 
 `backup.sh` 每天 03:30（服务器时区）把 Postgres（`pg_dump -Fc`）和 ClickHouse（`BACKUP DATABASE`）写到 `deploy/backups/<UTC 时间>/`，保留 7 天。另外请在阿里云控制台为系统盘开启自动快照，作为整机兜底。异地备份（R2）尚未配置。
 
-恢复（先在空实例上演练）：
+### 恢复演练（不影响线上，无需快照）
+
+把备份恢复到同一实例里的临时库 `restore_drill`，和线上逐表比对行数，比完删除。2026-11-04 用 `20261104T073516Z` 演练通过：PG 的 users/sites/goals 和 ClickHouse 的 23 张表行数全部一致。
 
 ```bash
 cd /opt/plausible/deploy
+ts=<备份目录名>
+docker compose exec -T plausible_db psql -U postgres -c "CREATE DATABASE restore_drill"
+docker compose exec -T plausible_db pg_restore -U postgres -d restore_drill --no-owner < backups/$ts/plausible_db.dump
+docker compose exec -T plausible_events_db clickhouse-client \
+  --query "RESTORE DATABASE plausible_events_db AS restore_drill FROM File('/backups/$ts/events/')"
+# 比对，例如：
+docker compose exec -T plausible_events_db clickhouse-client \
+  --query "select (select count() from plausible_events_db.events_v2), (select count() from restore_drill.events_v2)"
+# 清理
+docker compose exec -T plausible_events_db clickhouse-client --query "DROP DATABASE restore_drill SYNC"
+docker compose exec -T plausible_db psql -U postgres -c "DROP DATABASE restore_drill"
+```
+
+在脚本或 heredoc 里调用 `docker compose exec -T` 时要加 `</dev/null`，否则它会吞掉后续命令。
+
+### 正式恢复（覆盖线上数据）
+
+先跑一次 `backup.sh` 留底。ClickHouse 必须先删库再恢复；在非空表上加 `allow_non_empty_tables` 恢复会让事件重复。
+
+```bash
+cd /opt/plausible/deploy
+./backup.sh
 docker compose stop plausible
 ts=<备份目录名>
 docker compose exec -T plausible_db pg_restore -U postgres -d plausible_db --clean --if-exists < backups/$ts/plausible_db.dump
+docker compose exec -T plausible_events_db clickhouse-client --query "DROP DATABASE plausible_events_db SYNC"
 docker compose exec -T plausible_events_db clickhouse-client \
-  --query "RESTORE DATABASE plausible_events_db FROM File('/backups/$ts/events/') SETTINGS allow_non_empty_tables=true"
+  --query "RESTORE DATABASE plausible_events_db FROM File('/backups/$ts/events/')"
 docker compose start plausible
 ```
 

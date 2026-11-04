@@ -1,0 +1,6 @@
+<!-- 允许 BACKUP ... TO File('...') 写入挂载的 /backups 目录，供 backup.sh 使用 -->
+<clickhouse>
+    <backups>
+        <allowed_path>/backups/</allowed_path>
+    </backups>
+</clickhouse>

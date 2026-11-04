@@ -1,0 +1,83 @@
+# 基于官方 community-edition v3.2.1 的 compose.yml。
+# 差异：镜像可配置并固定版本、Postgres 密码取自 .env、直接对外开放 80/443（实例自己签 Let's Encrypt）、
+# 挂载备份目录。升级时先对照上游同版本 compose 的改动。
+services:
+  plausible_db:
+    image: postgres:16-alpine
+    restart: always
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./backups:/backups
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      start_period: 1m
+
+  plausible_events_db:
+    image: clickhouse/clickhouse-server:24.12-alpine
+    restart: always
+    volumes:
+      - event-data:/var/lib/clickhouse
+      - event-logs:/var/log/clickhouse-server
+      - ./backups:/backups
+      - ./clickhouse/logs.xml:/etc/clickhouse-server/config.d/logs.xml:ro
+      - ./clickhouse/ipv4-only.xml:/etc/clickhouse-server/config.d/ipv4-only.xml:ro
+      - ./clickhouse/low-resources.xml:/etc/clickhouse-server/config.d/low-resources.xml:ro
+      - ./clickhouse/backups.xml:/etc/clickhouse-server/config.d/backups.xml:ro
+      - ./clickhouse/default-profile-low-resources-overrides.xml:/etc/clickhouse-server/users.d/default-profile-low-resources-overrides.xml:ro
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    environment:
+      - CLICKHOUSE_SKIP_USER_SETUP=1
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 -O - http://127.0.0.1:8123/ping || exit 1"]
+      start_period: 1m
+
+  plausible:
+    # 默认官方镜像；以后用本 fork 自行构建时改 .env 的 PLAUSIBLE_IMAGE
+    image: ${PLAUSIBLE_IMAGE:-ghcr.io/plausible/community-edition:v3.2.1}
+    restart: always
+    command: sh -c "/entrypoint.sh db createdb && /entrypoint.sh db migrate && /entrypoint.sh run"
+    depends_on:
+      plausible_db:
+        condition: service_healthy
+      plausible_events_db:
+        condition: service_healthy
+    volumes:
+      - plausible-data:/var/lib/plausible
+    ports:
+      - 80:80
+      - 443:443
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    environment:
+      - TMPDIR=/var/lib/plausible/tmp
+      - BASE_URL=${BASE_URL:?Set BASE_URL in .env}
+      - SECRET_KEY_BASE=${SECRET_KEY_BASE:?Set SECRET_KEY_BASE in .env}
+      - DATABASE_URL=postgres://postgres:${POSTGRES_PASSWORD}@plausible_db:5432/plausible_db
+      - HTTP_PORT=80
+      - HTTPS_PORT=443
+      - TOTP_VAULT_KEY
+      - DISABLE_REGISTRATION
+      - ENABLE_EMAIL_VERIFICATION
+      - MAXMIND_LICENSE_KEY
+      - MAXMIND_EDITION
+      - MAILER_ADAPTER
+      - MAILER_EMAIL
+      - MAILER_NAME
+      - SMTP_HOST_ADDR
+      - SMTP_HOST_PORT
+      - SMTP_USER_NAME
+      - SMTP_USER_PWD
+      - SMTP_HOST_SSL_ENABLED
+
+volumes:
+  db-data:
+  event-data:
+  event-logs:
+  plausible-data:

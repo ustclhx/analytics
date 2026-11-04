@@ -42,7 +42,7 @@
 
 ## 备份与恢复
 
-`backup.sh` 每天 03:30（服务器时区）把 Postgres（`pg_dump -Fc`）和 ClickHouse（`BACKUP DATABASE`）写到 `deploy/backups/<UTC 时间>/`，保留 7 天。另外请在阿里云控制台为系统盘开启自动快照，作为整机兜底。异地备份（R2）尚未配置。
+`backup.sh` 每天 03:30（服务器时区）把 Postgres（`pg_dump -Fc`）和 ClickHouse（`BACKUP DATABASE`）写到 `deploy/backups/<UTC 时间>/`，保留 7 天。系统盘另有阿里云自动快照策略 `plausible-daily` 作为整机兜底：每天 04:00（UTC+8）拍一次，保留 7 天，不跨地域复制，「自动快照随云盘释放」应保持关闭。升级前可以手动拍一张快照，确认升级没问题后删掉。异地备份（R2）尚未配置。
 
 ### 恢复演练（不影响线上，无需快照）
 
